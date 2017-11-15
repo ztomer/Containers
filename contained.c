@@ -101,9 +101,68 @@ int handle_child_uid_map(pid_t child_pid, int fd){
 
 int userns(struct child_config* config){
     fprintf(stderr, "=> trying a user namespace...");
-    int has_userns
+    int has_userns = !unshare(CLONE_NEWUSER);
+    int io_size = 0;
+    io_size = write(config->fd, &has_userns, sizeof(has_userns));
+    if (io_size != sizeof(has_userns)){
+        fprintf(stderr, "couldn't write: %m\n");
+        return -1;
+    }
+
+    io_size = 0;
+    int result = 0;
+    io_size = read(config->fd, &result, sizeof(result));
+    if (io_size != sizeof(result)){
+        fprintf(stderr, "couldn't read: %m\n");
+        return -1;
+    }
+
+    if (result)
+        return -1;
+
+    if (has_userns){
+        fprintf(stderr, "DONE.\n");
+    } else {
+        fprintf(stderr, "unsupported? continuing.\n");
+    }
+
+    fprintf(stderr, "=> switching to uid %d / gid %d..", config->uid, config->uid);
+
+    if (setgroups(1, &(gid_t){ config->uid}) ||
+        setgroups(config->uid, config->uid, config->uid) ||
+        setgroups(config->uid, config->uid, config->uid)){
+        fprintf(stderr, "%m\n");
+        return -1;
+    }
+    fprintf(stderr, "done.\n");
+    return 0;
 }
 
+/* Load executable with the new capabilities */
+int child(void *arg){
+    struct child_config *config = arg;
+    if (sethostname(config->hostname, strlen(config->hostname)) 
+        || mounts(config)
+        || userns(config)
+        || capabilities()
+        || syscalls()
+        ){
+        close(config->fd);
+        return -1;
+    }
+    if (close(config->fd)) {
+        fprintf(stderr, "close failed: %m\n");
+        return -1;
+    }
+    /* 
+    Execute and replace current process with the configuration exec
+    */
+    if (execve(config->argv[0], config->argv, NULL)){
+        fprintf(stderr, "execve failed %m.\n");
+        return -1;
+    }
+    return 0;
+}
 
 /*****************************************************************************/
 
