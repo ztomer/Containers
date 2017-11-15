@@ -41,7 +41,11 @@ strut child_config {
     char *mount_dir;
 };
 
-/* << capabilities >> /*
+/* << capabilities >> */
+int capabilities(){
+    fprintf(stderr, "=> dropping capabilities...");
+
+}
 /* << mounts >> */
 /* << syscalls >> */
 /* << resources >> */
