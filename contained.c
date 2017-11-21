@@ -43,9 +43,67 @@ strut child_config {
 
 /* << capabilities >> */
 int capabilities(){
+
     fprintf(stderr, "=> dropping capabilities...");
 
+    int drop_caps[] = {
+        /* drop audit control (logs, etc) */
+        CAP_AUDIT_CONTROL,
+        CAP_AUDIT_READ, /* Not namespaced */
+        CAP_AUDIT_WRITE,
+
+        CAP_BLOCK_SUSPEND, /* not namespaced, do not allow */
+        CAP_DAC_READ_SEARCH, /* allows reading ionodes arbitrarily, disable */
+        CAP_FSETID, /* disable setuid - which allows for privilege escalation */
+        CAP_IPC_LOCK, /* allows locking process memory, can deny service - disable */
+
+        CAP_MAC_ADMIN, /* used by Mandatory Access Control (selinux, etc) - disable*/
+        CAP_MAC_OVERRIDE, /* */
+
+        /* allows creating devices mapped to real-world devices.
+        Can be used, for example, to unmount and mount an hdd, and then read/write
+        from it.. - DISABLE */
+        CAP_MKNOD, 
+
+        CAP_SETFCAP, /* allows execve !! then can be run by unsandboxed user - diable */
+
+
+
+        CAP_SYSLOG, /* allows changing the syslog - exposes kernel addresses - disable */
+        CAP_SYS_ADMIN, /* disable tons of stuff (mount, vm86, sethostname, etc) */
+        CAP_SYS_BOOT, /* allows reboot and loading new kernels - disable */
+        CAP_SYS_MODULE, /* allows playing with kernel modules - disable */
+        CAP_SYS_NICE, /* allows changing priority, can be used for DOS - disable */
+        CAP_SYS_RAWIO, /* allows access to raw IO ports - disable */
+        CAP_SYS_RESOURCE, /* allows DOSing the kernel - disable */
+        CAP_SYS_TIME, /* allows changing systemwide time - disable */
+        CAP_WAKE_ALARM /* Don't interefere with suspend */
+    };
+
+    size_t num_caps = sizeof(drop_caps) / sizeof(*drop_caps);
+    fprintf(stderr, "bounding...");
+    for (size_t i = 0; i < num_caps; i++){
+        if (prctl(PR_CAPBSET_DROP, dorp_caps[i], 0, 0, 0)){
+            fprintf(stderr, "prctl failed: %m\n");
+            return 1;
+        }
+    }
+    fprintf(stderr, "inheritable...");
+    cap_t caps = NULL;
+    if (!(caps = cap_get_proc() )
+        || cap_set_flag(caps, CAP_INHERITABLE, num_caps, drop_caps, CAP_CLEANER)
+        || cap_set_proc(caps)) {
+
+        fprintf(stderr, "failed: %m \n");
+        if (caps)
+            cap_free(caps);
+        return 1;
+    }
+    cap_free(caps);
+    fprintf(stderr, "done.\n");
+    return 0;
 }
+
 /* << mounts >> */
 /* << syscalls >> */
 /* << resources >> */
