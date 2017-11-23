@@ -32,7 +32,12 @@ process tree */
 #include <linux/capability.h>
 #include <linux/limits.h>
 
-strut child_config {
+/* Forward decleration */
+int pivot_root(const char* new_root, const char* put_old);
+
+
+
+struct child_config {
     int argc;
     uid_t uid;
     int fd;
@@ -83,7 +88,7 @@ int capabilities(){
     size_t num_caps = sizeof(drop_caps) / sizeof(*drop_caps);
     fprintf(stderr, "bounding...");
     for (size_t i = 0; i < num_caps; i++){
-        if (prctl(PR_CAPBSET_DROP, dorp_caps[i], 0, 0, 0)){
+        if (prctl(PR_CAPBSET_DROP, drop_caps[i], 0, 0, 0)){
             fprintf(stderr, "prctl failed: %m\n");
             return 1;
         }
@@ -91,7 +96,7 @@ int capabilities(){
     fprintf(stderr, "inheritable...");
     cap_t caps = NULL;
     if (!(caps = cap_get_proc() )
-        || cap_set_flag(caps, CAP_INHERITABLE, num_caps, drop_caps, CAP_CLEANER)
+        || cap_set_flag(caps, CAP_INHERITABLE, num_caps, drop_caps, CAP_CLEAR)
         || cap_set_proc(caps)) {
 
         fprintf(stderr, "failed: %m \n");
@@ -139,6 +144,7 @@ int mounts(struct child_config *config){
     fprintf(stderr, "done.\n");
 
     fprintf(stderr, "=> pivoting root....");
+    
     if (pivot_root(mount_dir, inner_mount_dir)) {
         fprintf(stderr, "failed!\n");
         return -1;
@@ -171,7 +177,7 @@ int mounts(struct child_config *config){
 /* PIVOT - ROOT */
 /* swap old root mount wiht a new one */
 int pivot_root(const char* new_root, const char* put_old){
-    return syscall(SYS_pivot_root, new_root, put_old)
+    return syscall(SYS_pivot_root, new_root, put_old);
 }
 
     
@@ -228,7 +234,7 @@ int syscalls(){
         || seccomp_attr_set(ctx, SCMP_FLTATR_CTL_NNP, 0)
 
         /* apply to the process and releaes the context */
-        || seccomp_load(ctx) {
+        || seccomp_load(ctx) ){
             if (ctx) 
                 seccomp_release(ctx);
             fprintf(stderr, "failed:%m \n");
@@ -239,6 +245,7 @@ int syscalls(){
         return 0;
     }   
 }
+
 /* << resources >> */
 #define MEMORY "1073741824"
 #define SHARES "256"
@@ -261,7 +268,7 @@ struct cgrp_setting add_to_tasks = {
 
 struct cgrp_control *cgrps[] = {
     &(struct cgrp_control) {
-        .contol = "memory",
+        .control = "memory",
         .settings = (struct cgrp_setting *[]){
             &(struct cgrp_setting) {
                 .name = "memory.limit_in_bytes",
@@ -270,7 +277,7 @@ struct cgrp_control *cgrps[] = {
             &(struct cgrp_setting) {
                 .name = "memory.kmem.limit_in_bytes",
                 .value = MEMORY
-            }
+            },
             &add_to_tasks,
             NULL
         }
@@ -632,7 +639,7 @@ int main (int argc, char** argv){
     /* Prepare cgroup for hte process tree */
     if (resources(&config)){
         err = 1;
-        goto clear_resources;
+        goto cleanup;
     }
     int flags = CLONE NEWNS 
         | CLONE_NEWCGROUP
@@ -644,11 +651,11 @@ int main (int argc, char** argv){
     /*
     Clone the process.
     stack grows downwar. get the end of the stack */
-    int child_pid = clone(child, stack + STACK_SIZE, flags, | SIGCHLD, &config);
+    int child_pid = clone(child, stack + STACK_SIZE, flags | SIGCHLD, &config);
     if (child_pid == -1 ) {
         fprintf(stderr, "=> clone failed! %m\n");
         err = 1;
-        goto clear_resources;
+        goto cleanup;
     }
 
 
